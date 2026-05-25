@@ -1,0 +1,106 @@
+{
+  "name": "@shapeshift-labs/frontier-logging",
+  "version": "0.1.0",
+  "description": "Opt-in structured logging, telemetry buffers, exporters, and Frontier patch summaries.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/siliconjungle/-shapeshift-labs-frontier-logging.git"
+  },
+  "homepage": "https://github.com/siliconjungle/-shapeshift-labs-frontier-logging#readme",
+  "bugs": {
+    "url": "https://github.com/siliconjungle/-shapeshift-labs-frontier-logging/issues"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
+    "./frontier": {
+      "types": "./dist/frontier.d.ts",
+      "import": "./dist/frontier.js",
+      "default": "./dist/frontier.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
+    },
+    "./exporters": {
+      "types": "./dist/exporters.d.ts",
+      "import": "./dist/exporters.js",
+      "default": "./dist/exporters.js"
+    },
+    "./benchmark": {
+      "types": "./dist/benchmark.d.ts",
+      "import": "./dist/benchmark.js",
+      "default": "./dist/benchmark.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "browser": [
+        "./dist/browser.d.ts"
+      ],
+      "frontier": [
+        "./dist/frontier.d.ts"
+      ],
+      "node": [
+        "./dist/node.d.ts"
+      ],
+      "exporters": [
+        "./dist/exporters.d.ts"
+      ],
+      "benchmark": [
+        "./dist/benchmark.d.ts"
+      ],
+      "*": [
+        "./dist/index.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "benchmarks/package-bench.mjs"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@shapeshift-labs/frontier": "^0.1.5",
+    "@shapeshift-labs/frontier-codec": "^0.1.3"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "npm run build && npm run typecheck && node test/smoke.mjs && node test/fuzz.mjs --cases 500",
+    "prepack": "npm run test",
+    "typecheck": "tsc -p test/tsconfig.json --noEmit",
+    "fuzz": "npm run build && node test/fuzz.mjs",
+    "bench": "npm run build && node benchmarks/package-bench.mjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "frontier",
+    "logging",
+    "telemetry",
+    "observability",
+    "structured-logging",
+    "browser-telemetry"
+  ],
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
