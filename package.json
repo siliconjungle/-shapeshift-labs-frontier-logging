@@ -1,6 +1,6 @@
 {
   "name": "@shapeshift-labs/frontier-logging",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Opt-in structured logging, telemetry buffers, exporters, and Frontier patch summaries.",
   "type": "module",
   "license": "MIT",
