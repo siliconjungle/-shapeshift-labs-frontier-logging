@@ -17,6 +17,7 @@ This package sits beside the core [`@shapeshift-labs/frontier`](https://www.npmj
 - [`@shapeshift-labs/frontier-state`](https://www.npmjs.com/package/@shapeshift-labs/frontier-state): patch-routed app-state subscriptions and maintained views.
 - [`@shapeshift-labs/frontier-state-cache`](https://www.npmjs.com/package/@shapeshift-labs/frontier-state-cache): normalized query-result cache.
 - [`@shapeshift-labs/frontier-schema`](https://www.npmjs.com/package/@shapeshift-labs/frontier-schema): JSON Schema validation and profile generation.
+- [`@shapeshift-labs/frontier-event-log`](https://www.npmjs.com/package/@shapeshift-labs/frontier-event-log): bounded event logs and replay cursors; related to logging but intentionally separate.
 - [`@shapeshift-labs/frontier-mutation`](https://www.npmjs.com/package/@shapeshift-labs/frontier-mutation): explicit mutation and selector plans.
 
 Package source repositories:
@@ -28,6 +29,7 @@ Package source repositories:
 - [`siliconjungle/-shapeshift-labs-frontier-state`](https://github.com/siliconjungle/-shapeshift-labs-frontier-state)
 - [`siliconjungle/-shapeshift-labs-frontier-state-cache`](https://github.com/siliconjungle/-shapeshift-labs-frontier-state-cache)
 - [`siliconjungle/-shapeshift-labs-frontier-schema`](https://github.com/siliconjungle/-shapeshift-labs-frontier-schema)
+- [`siliconjungle/-shapeshift-labs-frontier-event-log`](https://github.com/siliconjungle/-shapeshift-labs-frontier-event-log)
 - [`siliconjungle/-shapeshift-labs-frontier-mutation`](https://github.com/siliconjungle/-shapeshift-labs-frontier-mutation)
 - [`siliconjungle/-shapeshift-labs-frontier-logging`](https://github.com/siliconjungle/-shapeshift-labs-frontier-logging)
 
@@ -113,7 +115,7 @@ import {
 } from '@shapeshift-labs/frontier-logging/frontier';
 ```
 
-`summarizePatch()` and `logPatch()` summarize compact Frontier patches. `summarizeCrdtUpdate()` and `logCrdtUpdate()` currently accept structural CRDT update objects. Binary CRDT update inputs are summarized by encoded byte length only until `@shapeshift-labs/frontier-crdt` becomes a real extracted dependency.
+`summarizePatch()` and `logPatch()` summarize compact Frontier patches. `summarizeCrdtUpdate()` and `logCrdtUpdate()` accept structural CRDT update objects while keeping `@shapeshift-labs/frontier-crdt` out of the logging import path. Binary CRDT update inputs are summarized by encoded byte length only.
 
 ### Node File Sink
 
