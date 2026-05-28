@@ -1,0 +1,774 @@
+{
+  "package": "@shapeshift-labs/frontier-logging",
+  "version": "0.1.2",
+  "generatedAt": "2026-05-28T13:46:08.266Z",
+  "node": "v26.1.0",
+  "platform": "darwin arm64",
+  "rounds": 80,
+  "rows": [
+    {
+      "fixture": "Disabled lazy event",
+      "medianUs": 1.31,
+      "p95Us": 1.39
+    },
+    {
+      "fixture": "Sampled-out event",
+      "medianUs": 1.33,
+      "p95Us": 1.41
+    },
+    {
+      "fixture": "Buffered info event",
+      "medianUs": 3.39,
+      "p95Us": 3.85
+    },
+    {
+      "fixture": "Child context event",
+      "medianUs": 3.51,
+      "p95Us": 3.84
+    },
+    {
+      "fixture": "Redacted capped event",
+      "medianUs": 4.6,
+      "p95Us": 5.07
+    },
+    {
+      "fixture": "Patch summary",
+      "medianUs": 0.3,
+      "p95Us": 0.32
+    },
+    {
+      "fixture": "CRDT update object summary",
+      "medianUs": 0.86,
+      "p95Us": 0.93
+    },
+    {
+      "fixture": "Compact log batch encode, 64 records",
+      "medianUs": 22.27,
+      "p95Us": 22.99
+    },
+    {
+      "fixture": "Browser network telemetry",
+      "medianUs": 3.24,
+      "p95Us": 3.88
+    },
+    {
+      "fixture": "Browser breadcrumb sink",
+      "medianUs": 5.15,
+      "p95Us": 5.26
+    },
+    {
+      "fixture": "Browser offline buffer write",
+      "medianUs": 1.51,
+      "p95Us": 2.12
+    },
+    {
+      "fixture": "Browser telemetry batch encode, 128 events",
+      "medianUs": 19.22,
+      "p95Us": 19.98
+    }
+  ],
+  "logTrace": {
+    "format": "frontier-log-batch-v1",
+    "recordCount": 32,
+    "byteLength": 4135,
+    "dropped": 32,
+    "batch": {
+      "version": 1,
+      "generatedAt": 1779975968267,
+      "keys": [
+        "component",
+        "row",
+        "path",
+        "OP_ARRAY_SPLICE",
+        "OP_SET",
+        "set",
+        "textRun"
+      ],
+      "paths": [
+        "[\"rows\"]",
+        "[\"meta\",\"tick\"]",
+        "[\"text\"]",
+        "[\"body\"]"
+      ],
+      "records": [
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              32
+            ],
+            [
+              2,
+              "/rows/0/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              33
+            ],
+            [
+              2,
+              "/rows/1/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              34
+            ],
+            [
+              2,
+              "/rows/2/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              35
+            ],
+            [
+              2,
+              "/rows/3/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              36
+            ],
+            [
+              2,
+              "/rows/4/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              37
+            ],
+            [
+              2,
+              "/rows/5/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              38
+            ],
+            [
+              2,
+              "/rows/6/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              39
+            ],
+            [
+              2,
+              "/rows/7/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              40
+            ],
+            [
+              2,
+              "/rows/0/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              41
+            ],
+            [
+              2,
+              "/rows/1/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              42
+            ],
+            [
+              2,
+              "/rows/2/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              43
+            ],
+            [
+              2,
+              "/rows/3/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              44
+            ],
+            [
+              2,
+              "/rows/4/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              45
+            ],
+            [
+              2,
+              "/rows/5/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              46
+            ],
+            [
+              2,
+              "/rows/6/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              47
+            ],
+            [
+              2,
+              "/rows/7/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              48
+            ],
+            [
+              2,
+              "/rows/0/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              49
+            ],
+            [
+              2,
+              "/rows/1/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              50
+            ],
+            [
+              2,
+              "/rows/2/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              51
+            ],
+            [
+              2,
+              "/rows/3/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              52
+            ],
+            [
+              2,
+              "/rows/4/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              53
+            ],
+            [
+              2,
+              "/rows/5/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              54
+            ],
+            [
+              2,
+              "/rows/6/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              55
+            ],
+            [
+              2,
+              "/rows/7/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              56
+            ],
+            [
+              2,
+              "/rows/0/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              57
+            ],
+            [
+              2,
+              "/rows/1/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              58
+            ],
+            [
+              2,
+              "/rows/2/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              59
+            ],
+            [
+              2,
+              "/rows/3/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              60
+            ],
+            [
+              2,
+              "/rows/4/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.event",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ],
+            [
+              1,
+              61
+            ],
+            [
+              2,
+              "/rows/5/score"
+            ]
+          ]
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.patch",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ]
+          ],
+          "p": {
+            "o": 3,
+            "k": [
+              [
+                3,
+                1
+              ],
+              [
+                4,
+                2
+              ]
+            ],
+            "pc": 3,
+            "md": 2,
+            "ps": [
+              0,
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "t": 1,
+          "l": 9,
+          "n": "batch.crdt",
+          "tr": "019e6ed5a84194852c4241656092c4e1",
+          "a": [
+            [
+              0,
+              "batch"
+            ]
+          ],
+          "c": {
+            "b": 343,
+            "a": "logging-bench",
+            "s": 1,
+            "o": 2,
+            "lo": 12,
+            "aa": [
+              "logging-bench"
+            ],
+            "h": [
+              "logging-bench:1",
+              "logging-bench:2"
+            ],
+            "sv": {
+              "logging-bench": 12
+            },
+            "k": [
+              [
+                5,
+                1
+              ],
+              [
+                6,
+                1
+              ]
+            ],
+            "pc": 2,
+            "md": 2,
+            "ps": [
+              1,
+              3
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

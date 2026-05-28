@@ -231,22 +231,22 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-Latest local package benchmark on Node v26.1.0, darwin arm64, 9 rounds:
+Latest local package benchmark on Node v26.1.0, darwin arm64, 120 rounds:
 
 | Fixture | Median | p95 |
 | --- | ---: | ---: |
-| Disabled lazy event | 2.86 us | 3.33 us |
-| Sampled-out event | 3.41 us | 4.68 us |
-| Buffered info event | 10.62 us | 17.85 us |
-| Child context event | 9.09 us | 9.86 us |
-| Redacted capped event | 12.43 us | 13.13 us |
-| Patch summary | 0.78 us | 0.94 us |
-| CRDT update object summary | 2.40 us | 2.69 us |
-| Compact log batch encode, 64 records | 46.98 us | 57.07 us |
-| Browser network telemetry | 8.03 us | 8.70 us |
-| Browser breadcrumb sink | 11.25 us | 13.00 us |
-| Browser offline buffer write | 3.29 us | 4.00 us |
-| Browser telemetry batch encode, 128 events | 44.31 us | 47.14 us |
+| Disabled lazy event | 0.07 us | 0.08 us |
+| Sampled-out event | 0.08 us | 0.09 us |
+| Buffered info event | 3.13 us | 3.35 us |
+| Child context event | 3.21 us | 3.58 us |
+| Redacted capped event | 4.23 us | 4.50 us |
+| Patch summary | 0.31 us | 0.34 us |
+| CRDT update object summary | 0.86 us | 0.93 us |
+| Compact log batch encode, 64 records | 22.16 us | 22.83 us |
+| Browser network telemetry | 3.34 us | 3.79 us |
+| Browser breadcrumb sink | 5.08 us | 5.23 us |
+| Browser offline buffer write | 1.45 us | 2.15 us |
+| Browser telemetry batch encode, 128 events | 19.63 us | 20.16 us |
 
 These are Frontier-only package measurements, not competitor comparisons.
 

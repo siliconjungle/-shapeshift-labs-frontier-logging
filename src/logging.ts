@@ -222,6 +222,14 @@ interface LoggerControls {
   maxPayloadBytes: number | undefined;
 }
 
+interface TraceIdRef {
+  value?: string;
+}
+
+interface SpanIdSourceRef {
+  next?: () => string;
+}
+
 export const LOG_LEVELS: Record<LogLevel, number> = {
   trace: 1,
   debug: 5,
@@ -231,7 +239,6 @@ export const LOG_LEVELS: Record<LogLevel, number> = {
   fatal: 21
 };
 
-const LOG_LEVEL_NAMES: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const TRUNCATED_VALUE = '[truncated]';
@@ -244,14 +251,14 @@ export function createLogger(options: LoggerOptions = {}): FrontierLogger {
     context: cloneJsonObject(options.context),
     resource: cloneJsonObject(options.resource),
     scope: options.scope,
-    traceId: options.traceId || createTraceId(),
+    traceIdRef: options.traceId ? { value: options.traceId } : {},
     spanId: options.spanId,
     parentSpanId: options.parentSpanId,
     sinks,
     buffer,
     now: options.now || Date.now,
     emitSpanStart: options.emitSpanStart !== false,
-    idSource: createIdSource(),
+    idSourceRef: {},
     controls: createControls(options)
   });
 }
@@ -337,14 +344,14 @@ class FrontierLoggerImpl implements FrontierLogger {
   private readonly context: JsonObject | undefined;
   private readonly resource: JsonObject | undefined;
   private readonly scope: string | undefined;
-  private readonly traceId: string;
+  private readonly traceIdRef: TraceIdRef;
   private readonly spanId: string | undefined;
   private readonly parentSpanId: string | undefined;
   private readonly sinks: LogSink[];
   private readonly buffer: LogBuffer | null;
   private readonly now: () => number;
   private readonly emitSpanStart: boolean;
-  private readonly idSource: () => string;
+  private readonly idSourceRef: SpanIdSourceRef;
   private readonly controls: LoggerControls;
   private readonly fastPath: boolean;
 
@@ -353,14 +360,14 @@ class FrontierLoggerImpl implements FrontierLogger {
     context?: JsonObject;
     resource?: JsonObject;
     scope?: string;
-    traceId: string;
+    traceIdRef: TraceIdRef;
     spanId?: string;
     parentSpanId?: string;
     sinks: LogSink[];
     buffer: LogBuffer | null;
     now: () => number;
     emitSpanStart: boolean;
-    idSource: () => string;
+    idSourceRef: SpanIdSourceRef;
     controls: LoggerControls;
   }) {
     this.severityNumber = options.threshold;
@@ -368,14 +375,14 @@ class FrontierLoggerImpl implements FrontierLogger {
     this.context = options.context;
     this.resource = options.resource;
     this.scope = options.scope;
-    this.traceId = options.traceId;
+    this.traceIdRef = options.traceIdRef;
     this.spanId = options.spanId;
     this.parentSpanId = options.parentSpanId;
     this.sinks = options.sinks;
     this.buffer = options.buffer;
     this.now = options.now;
     this.emitSpanStart = options.emitSpanStart;
-    this.idSource = options.idSource;
+    this.idSourceRef = options.idSourceRef;
     this.controls = options.controls;
     this.fastPath = options.controls.sample === undefined &&
       options.controls.sampleRate === 1 &&
@@ -393,36 +400,37 @@ class FrontierLoggerImpl implements FrontierLogger {
       context: mergeObjects(this.context, context),
       resource: this.resource,
       scope: this.scope,
-      traceId: this.traceId,
+      traceIdRef: this.traceIdRef,
       spanId: this.spanId,
       parentSpanId: this.parentSpanId,
       sinks: this.sinks,
       buffer: this.buffer,
       now: this.now,
       emitSpanStart: this.emitSpanStart,
-      idSource: this.idSource,
+      idSourceRef: this.idSourceRef,
       controls: this.controls
     });
   }
 
   startSpan(name: string, attributes?: LogAttributesInput): LogSpan {
-    const spanId = this.idSource();
+    const traceId = this.getTraceId();
+    const spanId = this.nextSpanId();
     const spanLogger = new FrontierLoggerImpl({
       threshold: this.severityNumber,
       context: this.context,
       resource: this.resource,
       scope: this.scope,
-      traceId: this.traceId,
+      traceIdRef: this.traceIdRef,
       spanId,
       parentSpanId: this.spanId,
       sinks: this.sinks,
       buffer: this.buffer,
       now: this.now,
       emitSpanStart: this.emitSpanStart,
-      idSource: this.idSource,
+      idSourceRef: this.idSourceRef,
       controls: this.controls
     });
-    const span = new FrontierSpanImpl(name, this.traceId, spanId, this.spanId, this.now(), spanLogger, this.now);
+    const span = new FrontierSpanImpl(name, traceId, spanId, this.spanId, this.now(), spanLogger, this.now);
     if (this.emitSpanStart) spanLogger.event('trace', name, mergeAttributeInput(attributes, { phase: 'start' }));
     return span;
   }
@@ -552,7 +560,7 @@ class FrontierLoggerImpl implements FrontierLogger {
     crdt?: CrdtUpdateTelemetry
   ): LogRecord {
     const attrs = readAttributes(attributes);
-    const merged = mergeObjects(this.context, attrs);
+    const merged = this.context === undefined ? attrs : mergeObjects(this.context, attrs);
     const record: LogRecord = {
       time: this.now(),
       level,
@@ -561,7 +569,7 @@ class FrontierLoggerImpl implements FrontierLogger {
     };
     if (message !== undefined) record.message = message;
     if (observedTime !== undefined) record.observedTime = observedTime;
-    if (this.traceId) record.traceId = this.traceId;
+    record.traceId = this.getTraceId();
     if (this.spanId) record.spanId = this.spanId;
     if (this.parentSpanId) record.parentSpanId = this.parentSpanId;
     if (this.resource) record.resource = this.resource;
@@ -582,6 +590,24 @@ class FrontierLoggerImpl implements FrontierLogger {
 
   private write(record: LogRecord): void {
     for (let i = 0, length = this.sinks.length; i < length; i++) this.sinks[i].write(record);
+  }
+
+  private getTraceId(): string {
+    let traceId = this.traceIdRef.value;
+    if (traceId === undefined) {
+      traceId = createTraceId();
+      this.traceIdRef.value = traceId;
+    }
+    return traceId;
+  }
+
+  private nextSpanId(): string {
+    let source = this.idSourceRef.next;
+    if (source === undefined) {
+      source = createIdSource();
+      this.idSourceRef.next = source;
+    }
+    return source();
   }
 }
 
@@ -711,12 +737,12 @@ function severityNumber(level: LogLevelInput): number {
 }
 
 function levelName(severity: number): LogLevel {
-  let selected = LOG_LEVEL_NAMES[0];
-  for (let i = 0, length = LOG_LEVEL_NAMES.length; i < length; i++) {
-    const name = LOG_LEVEL_NAMES[i];
-    if (severity >= LOG_LEVELS[name]) selected = name;
-  }
-  return selected;
+  if (severity >= LOG_LEVELS.fatal) return 'fatal';
+  if (severity >= LOG_LEVELS.error) return 'error';
+  if (severity >= LOG_LEVELS.warn) return 'warn';
+  if (severity >= LOG_LEVELS.info) return 'info';
+  if (severity >= LOG_LEVELS.debug) return 'debug';
+  return 'trace';
 }
 
 function readAttributes(input: LogAttributesInput): JsonObject | undefined {
