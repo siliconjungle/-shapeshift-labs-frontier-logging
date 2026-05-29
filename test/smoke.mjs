@@ -26,8 +26,10 @@ import {
 import {
   logCrdtUpdate,
   logPatch,
+  logRegistryGraph,
   summarizeCrdtUpdate,
-  summarizePatch
+  summarizePatch,
+  summarizeRegistryGraph
 } from '@shapeshift-labs/frontier-logging/frontier';
 import { createFileLogSink } from '@shapeshift-labs/frontier-logging/node';
 import {
@@ -100,6 +102,32 @@ assert.ok(crdtTelemetry.byteLength > 0);
 
 const crdtRecord = logCrdtUpdate(logger, 'info', 'crdt.update', update, { peer: 'remote' });
 assert.strictEqual(crdtRecord.crdt.actor, 'logging-a');
+
+const registryGraph = {
+  kind: 'frontier.registry.graph',
+  version: 1,
+  entries: [{
+    id: 'todo.toggle',
+    kind: 'action',
+    feature: 'todos',
+    package: '@app/todos',
+    source: { file: 'src/features/todos/actions.ts' },
+    tags: ['mutation']
+  }],
+  records: [{ id: 'act-1', entryId: 'todo.toggle', kind: 'action', status: 'ok' }],
+  edges: [{ from: 'entry:todo.toggle', to: 'path:/todos/*/done', kind: 'declares-write' }]
+};
+const registryTelemetry = summarizeRegistryGraph(registryGraph);
+assert.strictEqual(registryTelemetry.kind, 'registry');
+assert.strictEqual(registryTelemetry.entryCount, 1);
+assert.strictEqual(registryTelemetry.packageCount, 1);
+assert.strictEqual(registryTelemetry.tagCount, 1);
+assert.strictEqual(registryTelemetry.fileCount, 1);
+assert.deepStrictEqual(registryTelemetry.featureSamples, ['todos']);
+assert.deepStrictEqual(registryTelemetry.packageSamples, ['@app/todos']);
+assert.deepStrictEqual(registryTelemetry.pathSamples, ['/todos/*/done']);
+const registryRecord = logRegistryGraph(logger, 'info', 'registry.graph', registryGraph, { feature: 'todos' });
+assert.strictEqual(registryRecord.telemetry.entryCount, 1);
 
 const records = logger.snapshot();
 assert.deepStrictEqual(decodeLogBatch(encodeLogBatch(records)), records);

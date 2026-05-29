@@ -23,6 +23,7 @@ import type {
   Patch,
   PatchOperation
 } from '@shapeshift-labs/frontier/types';
+import type { FrontierRegistryGraph } from '@shapeshift-labs/frontier/registry';
 import type {
   CrdtStateVector,
   CrdtUpdateTelemetry,
@@ -41,6 +42,29 @@ export interface PatchTelemetryOptions {
 export interface CrdtTelemetryOptions {
   pathSampleLimit?: number;
   headSampleLimit?: number;
+}
+
+export interface RegistryTelemetryOptions {
+  entrySampleLimit?: number;
+  featureSampleLimit?: number;
+  packageSampleLimit?: number;
+  pathSampleLimit?: number;
+}
+
+export interface RegistryGraphTelemetry extends JsonObject {
+  kind: 'registry';
+  entryCount: number;
+  recordCount: number;
+  edgeCount: number;
+  featureCount: number;
+  packageCount: number;
+  tagCount: number;
+  fileCount: number;
+  pathCount: number;
+  entrySamples: string[];
+  featureSamples: string[];
+  packageSamples: string[];
+  pathSamples: string[];
 }
 
 export type CrdtOperationId = string;
@@ -203,6 +227,76 @@ export function logCrdtUpdate(
   });
 }
 
+export function summarizeRegistryGraph(
+  graph: FrontierRegistryGraph,
+  options: RegistryTelemetryOptions = {}
+): RegistryGraphTelemetry {
+  const entrySampleLimit = readLimit(options.entrySampleLimit, 8);
+  const featureSampleLimit = readLimit(options.featureSampleLimit, 8);
+  const packageSampleLimit = readLimit(options.packageSampleLimit, 8);
+  const pathSampleLimit = readLimit(options.pathSampleLimit, 8);
+  const features = new Set<string>();
+  const packages = new Set<string>();
+  const tags = new Set<string>();
+  const files = new Set<string>();
+  const paths = new Set<string>();
+  const entrySamples: string[] = [];
+  const featureSamples: string[] = [];
+  const packageSamples: string[] = [];
+  const pathSamples: string[] = [];
+
+  for (let i = 0; i < graph.entries.length; i++) {
+    const entry = graph.entries[i];
+    if (entry.feature !== undefined) {
+      features.add(entry.feature);
+      if (featureSamples.length < featureSampleLimit && !featureSamples.includes(entry.feature)) featureSamples[featureSamples.length] = entry.feature;
+    }
+    if (entry.package !== undefined) {
+      packages.add(entry.package);
+      if (packageSamples.length < packageSampleLimit && !packageSamples.includes(entry.package)) packageSamples[packageSamples.length] = entry.package;
+    }
+    for (const tag of entry.tags ?? []) tags.add(String(tag));
+    collectRegistrySourceFiles(entry.source, files);
+    if (entrySamples.length < entrySampleLimit) entrySamples[entrySamples.length] = entry.id;
+  }
+  for (let i = 0; i < graph.edges.length; i++) {
+    const edge = graph.edges[i];
+    collectRegistryPathSample(edge.from, paths, pathSamples, pathSampleLimit);
+    collectRegistryPathSample(edge.to, paths, pathSamples, pathSampleLimit);
+  }
+
+  return {
+    kind: 'registry',
+    entryCount: graph.entries.length,
+    recordCount: graph.records.length,
+    edgeCount: graph.edges.length,
+    featureCount: features.size,
+    packageCount: packages.size,
+    tagCount: tags.size,
+    fileCount: files.size,
+    pathCount: paths.size,
+    entrySamples,
+    featureSamples,
+    packageSamples,
+    pathSamples
+  };
+}
+
+export function logRegistryGraph(
+  logger: FrontierLogger,
+  level: LogLevelInput,
+  name: string,
+  graph: FrontierRegistryGraph,
+  attributes?: LogAttributesInput,
+  options?: RegistryTelemetryOptions
+): LogRecord | undefined {
+  if (!logger.isEnabled(level)) return undefined;
+  return logger.record(level, name, {
+    attributes,
+    telemetry: summarizeRegistryGraph(graph, options)
+  });
+}
+
 function readLimit(value: number | undefined, fallback: number): number {
   if (value === undefined) return fallback;
   return Math.max(0, Math.floor(value));
@@ -216,6 +310,25 @@ function collectPathTelemetry(path: JsonPath, seenPaths: Set<string>, samples: s
     if (samples.length < sampleLimit) samples[samples.length] = key;
   }
   return maxDepth;
+}
+
+function collectRegistryPathSample(node: string, seenPaths: Set<string>, samples: string[], sampleLimit: number): void {
+  if (!node.startsWith('path:')) return;
+  const path = node.slice(5);
+  if (seenPaths.has(path)) return;
+  seenPaths.add(path);
+  if (samples.length < sampleLimit) samples[samples.length] = path;
+}
+
+function collectRegistrySourceFiles(source: unknown, files: Set<string>): void {
+  if (source === undefined || source === null) return;
+  const list = Array.isArray(source) ? source : [source];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item !== null && typeof item === 'object' && typeof (item as { file?: unknown }).file === 'string') {
+      files.add((item as { file: string }).file);
+    }
+  }
 }
 
 function collectOperationExtraPaths(op: PatchOperation, seenPaths: Set<string>, samples: string[], sampleLimit: number, maxPathDepth: number): number {

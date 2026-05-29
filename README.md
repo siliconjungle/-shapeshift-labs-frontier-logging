@@ -28,6 +28,7 @@ The published Frontier package family is generated from one shared package catal
 - [`@shapeshift-labs/frontier-virtual`](https://www.npmjs.com/package/@shapeshift-labs/frontier-virtual): DOM-neutral virtualization, layout providers, range materialization, grids, spatial/frustum indexes, patch invalidation, camera anchors, and serializable layout state.
 - [`@shapeshift-labs/frontier-scene`](https://www.npmjs.com/package/@shapeshift-labs/frontier-scene): Patch-native 2D/3D scene graph, transform propagation, bounds queries, virtual/culling adapters, spatial invalidation, and camera/frustum materialization.
 - [`@shapeshift-labs/frontier-pathfinding`](https://www.npmjs.com/package/@shapeshift-labs/frontier-pathfinding): Patch-native grid pathfinding, typed-array A*/Dijkstra search, flow fields, connected components, line-of-sight smoothing, dirty-cell invalidation, and scheduler-friendly path jobs.
+- [`@shapeshift-labs/frontier-lod`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lod): Patch-native level-of-detail and significance selection for rendering and computation workloads, compact typed hot paths, budget degradation, materialization frames, and scheduler work plans.
 - [`@shapeshift-labs/frontier-dom`](https://www.npmjs.com/package/@shapeshift-labs/frontier-dom): Patch-native DOM and host renderer bindings, manifest hydration, JSX runtime/compiler helpers, SSR, devtools, and logging bridges.
 - [`@shapeshift-labs/frontier-playwright`](https://www.npmjs.com/package/@shapeshift-labs/frontier-playwright): Playwright/headless automation probes for Frontier state, DOM, devtools, marks, and timeline queries.
 - [`@shapeshift-labs/frontier-crdt`](https://www.npmjs.com/package/@shapeshift-labs/frontier-crdt): Native CRDT documents, update tooling, awareness, branches, conflict introspection, version frames, and undo.
@@ -59,6 +60,7 @@ Package source repositories:
 - [`siliconjungle/-shapeshift-labs-frontier-virtual`](https://github.com/siliconjungle/-shapeshift-labs-frontier-virtual)
 - [`siliconjungle/-shapeshift-labs-frontier-scene`](https://github.com/siliconjungle/-shapeshift-labs-frontier-scene)
 - [`siliconjungle/-shapeshift-labs-frontier-pathfinding`](https://github.com/siliconjungle/-shapeshift-labs-frontier-pathfinding)
+- [`siliconjungle/-shapeshift-labs-frontier-lod`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lod)
 - [`siliconjungle/-shapeshift-labs-frontier-dom`](https://github.com/siliconjungle/-shapeshift-labs-frontier-dom)
 - [`siliconjungle/-shapeshift-labs-frontier-playwright`](https://github.com/siliconjungle/-shapeshift-labs-frontier-playwright)
 - [`siliconjungle/-shapeshift-labs-frontier-crdt`](https://github.com/siliconjungle/-shapeshift-labs-frontier-crdt)
@@ -150,12 +152,14 @@ Browser telemetry buffers capture breadcrumbs, network events, replay metadata, 
 import {
   logCrdtUpdate,
   logPatch,
+  logRegistryGraph,
   summarizeCrdtUpdate,
-  summarizePatch
+  summarizePatch,
+  summarizeRegistryGraph
 } from '@shapeshift-labs/frontier-logging/frontier';
 ```
 
-`summarizePatch()` and `logPatch()` summarize compact Frontier patches. `summarizeCrdtUpdate()` and `logCrdtUpdate()` accept structural CRDT update objects while keeping `@shapeshift-labs/frontier-crdt` out of the logging import path. Binary CRDT update inputs are summarized by encoded byte length only.
+`summarizePatch()` and `logPatch()` summarize compact Frontier patches. `summarizeCrdtUpdate()` and `logCrdtUpdate()` accept structural CRDT update objects while keeping `@shapeshift-labs/frontier-crdt` out of the logging import path. `summarizeRegistryGraph()` and `logRegistryGraph()` summarize Frontier registry graphs so action/query/state/component dependency edges, feature/package counts, tag counts, source-file counts, and touched paths can be attached to logs or AI evidence bundles. Binary CRDT update inputs are summarized by encoded byte length only.
 
 ### Node File Sink
 
