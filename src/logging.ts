@@ -113,6 +113,38 @@ export interface LoggerOptions {
   maxPayloadBytes?: number;
 }
 
+export interface LogSchedulerTask {
+  id?: string;
+  type?: string;
+  input?: unknown;
+  lane?: string;
+  area?: string;
+  priority?: unknown;
+  units?: number;
+  key?: string;
+  causeId?: string;
+  parentId?: string;
+  dependsOn?: readonly string[];
+  metadata?: Record<string, unknown>;
+  run(context?: unknown): unknown;
+}
+
+export interface LogSchedulerLike {
+  schedule(task: LogSchedulerTask): unknown;
+  run?(options?: unknown): unknown;
+  requestRun?(options?: unknown): unknown;
+}
+
+export interface ScheduledLogSinkOptions {
+  scheduler: LogSchedulerLike;
+  idPrefix?: string;
+  lane?: string;
+  priority?: unknown;
+  units?: number;
+  autoRun?: boolean;
+  runOptions?: unknown;
+}
+
 export interface FrontierLogger {
   readonly level: LogLevel;
   readonly severityNumber: number;
@@ -268,6 +300,60 @@ export function createLogBuffer(options: { capacity?: number } = {}): LogBuffer 
   return new RingLogBuffer(capacity);
 }
 
+export function createScheduledLogSink(sink: LogSink, options: ScheduledLogSinkOptions): LogSink {
+  if (sink === null || typeof sink !== 'object' || typeof sink.write !== 'function') {
+    throw new TypeError('frontier logging scheduled sink requires a sink with write()');
+  }
+  const scheduler = options.scheduler;
+  if (scheduler === null || typeof scheduler !== 'object' || typeof scheduler.schedule !== 'function') {
+    throw new TypeError('frontier logging scheduler must expose schedule()');
+  }
+  const idPrefix = options.idPrefix ?? 'frontier.logging';
+  const lane = options.lane ?? 'logging';
+  const priority = options.priority ?? 'low';
+  const units = options.units ?? 1;
+  let sequence = 0;
+  return {
+    write(record) {
+      scheduleLogSinkWork(scheduler, options, {
+        id: idPrefix + '.write:' + ++sequence,
+        type: 'frontier.logging.write',
+        input: record,
+        lane,
+        area: 'logging',
+        priority,
+        units,
+        key: record.traceId ?? record.name ?? record.level,
+        metadata: { level: record.level, name: record.name },
+        run() {
+          sink.write(record);
+        }
+      });
+    },
+    flush() {
+      if (typeof sink.flush !== 'function') return;
+      scheduleLogSinkWork(scheduler, options, {
+        id: idPrefix + '.flush:' + ++sequence,
+        type: 'frontier.logging.flush',
+        lane,
+        area: 'logging',
+        priority,
+        units,
+        key: idPrefix + '.flush',
+        run() {
+          sink.flush?.();
+        }
+      });
+    },
+    snapshot() {
+      return sink.snapshot?.() ?? [];
+    },
+    clear() {
+      sink.clear?.();
+    }
+  };
+}
+
 export function compactLogBatch(records: readonly LogRecord[], now: number = Date.now()): CompactLogBatch {
   const keyTable = createDictionary();
   const pathTable = createDictionary();
@@ -336,6 +422,19 @@ export function createBrowserLogSink(options: BrowserLogSinkOptions = {}): LogSi
       else write.call(target, record.message || record.name || record.level);
     }
   };
+}
+
+function scheduleLogSinkWork(
+  scheduler: LogSchedulerLike,
+  options: ScheduledLogSinkOptions,
+  task: LogSchedulerTask
+): unknown {
+  const scheduled = scheduler.schedule(task);
+  if (options.autoRun === true) {
+    if (typeof scheduler.requestRun === 'function') scheduler.requestRun(options.runOptions);
+    else if (typeof scheduler.run === 'function') scheduler.run(options.runOptions);
+  }
+  return scheduled;
 }
 
 class FrontierLoggerImpl implements FrontierLogger {

@@ -10,6 +10,7 @@ import {
   createLogBuffer,
   createLogger,
   createNdjsonLogSink,
+  createScheduledLogSink,
   decodeLogBatch,
   encodeLogBatch
 } from '@shapeshift-labs/frontier-logging';
@@ -108,6 +109,45 @@ const ndjsonLines = [];
 const ndjsonLogger = createLogger({ level: 'info', buffer: false, sinks: createNdjsonLogSink((line) => ndjsonLines.push(line)), now: () => 1 });
 ndjsonLogger.info('ndjson.event', { ok: true });
 assert.ok(ndjsonLines[0].endsWith('\n'));
+
+const scheduledRecords = [];
+const scheduledTasks = [];
+const scheduledLogger = createLogger({
+  level: 'info',
+  buffer: false,
+  sinks: createScheduledLogSink({
+    write(record) {
+      scheduledRecords.push(record);
+    },
+    flush() {
+      scheduledRecords.push({ name: 'scheduled.flush' });
+    }
+  }, {
+    scheduler: {
+      schedule(task) {
+        scheduledTasks.push(task);
+        return task;
+      },
+      run(options = {}) {
+        const lane = options.lane;
+        for (let i = 0; i < scheduledTasks.length; i++) {
+          const task = scheduledTasks[i];
+          if (lane !== undefined && task.lane !== lane) continue;
+          scheduledTasks.splice(i, 1);
+          i--;
+          task.run();
+        }
+      }
+    },
+    lane: 'logging'
+  }),
+  now: () => 1
+});
+scheduledLogger.info('scheduled.event');
+assert.strictEqual(scheduledRecords.length, 0);
+assert.strictEqual(scheduledTasks[0].type, 'frontier.logging.write');
+scheduledTasks[0].run();
+assert.strictEqual(scheduledRecords[0].name, 'scheduled.event');
 
 const browserCalls = [];
 const browserLogger = createLogger({
