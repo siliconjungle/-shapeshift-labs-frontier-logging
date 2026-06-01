@@ -2,7 +2,7 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 // @ts-ignore Node types are optional for browser-first consumers of the package.
 import { dirname } from 'node:path';
-import type { LogSink } from './logging.js';
+import type { LogSink } from './logging.ts';
 
 export interface FileLogSinkOptions {
   append?: boolean;

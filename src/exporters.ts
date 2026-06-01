@@ -1,5 +1,5 @@
 import type { JsonArray, JsonObject, JsonValue } from '@shapeshift-labs/frontier/types';
-import type { LogRecord } from './logging.js';
+import type { LogRecord } from './logging.ts';
 
 export interface OpenTelemetryExportOptions {
   resource?: JsonObject;

@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from '@shapeshift-labs/frontier/types';
-import type { LogLevel, LogRecord, LogSink } from './logging.js';
+import type { LogLevel, LogRecord, LogSink } from './logging.ts';
 
 export type BrowserTelemetryKind =
   | 'breadcrumb'

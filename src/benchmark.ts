@@ -4,7 +4,7 @@ import {
   encodeLogBatch,
   type CompactLogBatch,
   type LogRecord
-} from './logging.js';
+} from './logging.ts';
 
 export interface LogTraceSnapshotSource {
   readonly dropped?: number;

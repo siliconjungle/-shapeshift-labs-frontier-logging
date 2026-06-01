@@ -32,7 +32,7 @@ import type {
   LogLevelInput,
   LogRecord,
   PatchTelemetry
-} from './logging.js';
+} from './logging.ts';
 
 export interface PatchTelemetryOptions {
   includeByteLength?: boolean;
