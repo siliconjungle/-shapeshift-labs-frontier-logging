@@ -12,7 +12,10 @@ import {
   createNdjsonLogSink,
   createScheduledLogSink,
   decodeLogBatch,
-  encodeLogBatch
+  encodeLogBatch,
+  estimateAgentUsageCost,
+  logAgentUsage,
+  summarizeAgentUsage
 } from '@shapeshift-labs/frontier-logging';
 import {
   compactBrowserTelemetryBatch,
@@ -129,9 +132,62 @@ assert.deepStrictEqual(registryTelemetry.pathSamples, ['/todos/*/done']);
 const registryRecord = logRegistryGraph(logger, 'info', 'registry.graph', registryGraph, { feature: 'todos' });
 assert.strictEqual(registryRecord.telemetry.entryCount, 1);
 
+const agentUsage = summarizeAgentUsage({
+  modelId: 'gpt-5.5',
+  inputTokens: 2000,
+  cachedInputTokens: 1200,
+  outputTokens: 500,
+  runtimeMs: 4210,
+  pricing: {
+    currency: 'USD',
+    inputCostPerUnit: 5,
+    cachedInputCostPerUnit: 0.5,
+    outputCostPerUnit: 30,
+    unitTokens: 1000000
+  },
+  wasteFlags: ['stale-worker-rerun', 'stale-worker-rerun']
+});
+assert.strictEqual(agentUsage.kind, 'agent-usage');
+assert.strictEqual(agentUsage.modelId, 'gpt-5.5');
+assert.strictEqual(agentUsage.inputTokens, 2000);
+assert.strictEqual(agentUsage.cachedInputTokens, 1200);
+assert.strictEqual(agentUsage.uncachedInputTokens, 800);
+assert.strictEqual(agentUsage.outputTokens, 500);
+assert.strictEqual(agentUsage.totalTokens, 2500);
+assert.strictEqual(agentUsage.runtimeMs, 4210);
+assert.deepStrictEqual(agentUsage.wasteFlags, ['stale-worker-rerun']);
+assert.strictEqual(agentUsage.estimatedCost.currency, 'USD');
+assert.strictEqual(agentUsage.estimatedCost.unitTokens, 1000000);
+assert.ok(Math.abs(agentUsage.estimatedCost.totalCost - 0.0196) < 1e-12);
+assert.deepStrictEqual(estimateAgentUsageCost(agentUsage, {
+  currency: 'USD',
+  inputCostPerUnit: 5,
+  cachedInputCostPerUnit: 0.5,
+  outputCostPerUnit: 30,
+  unitTokens: 1000000
+}), agentUsage.estimatedCost);
+
+const agentUsageRecord = logAgentUsage(logger, 'info', 'agent.swarm.autonomous_merge.usage', {
+  modelId: 'gpt-5.5',
+  inputTokens: 2000,
+  cachedInputTokens: 1200,
+  outputTokens: 500,
+  runtimeMs: 4210,
+  estimatedCost: agentUsage.estimatedCost,
+  wasteFlags: ['stale-worker-rerun']
+}, {
+  swarmId: 'swarm-1',
+  lane: 'autonomous-merge',
+  coordinatorReview: 'routine-not-human-blocker'
+});
+assert.strictEqual(agentUsageRecord.telemetry.kind, 'agent-usage');
+assert.strictEqual(agentUsageRecord.telemetry.estimatedCost.totalCost, agentUsage.estimatedCost.totalCost);
+assert.strictEqual(agentUsageRecord.attributes.coordinatorReview, 'routine-not-human-blocker');
+
 const records = logger.snapshot();
 assert.deepStrictEqual(decodeLogBatch(encodeLogBatch(records)), records);
 assert.strictEqual(compactLogBatch(records, 1234).version, 1);
+assert.strictEqual(decodeLogBatch(encodeLogBatch([agentUsageRecord]))[0].telemetry.kind, 'agent-usage');
 
 const ndjsonLines = [];
 const ndjsonLogger = createLogger({ level: 'info', buffer: false, sinks: createNdjsonLogSink((line) => ndjsonLines.push(line)), now: () => 1 });

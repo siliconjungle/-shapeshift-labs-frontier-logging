@@ -239,6 +239,10 @@ import {
   createScheduledLogSink,
   decodeLogBatch,
   encodeLogBatch,
+  estimateAgentUsageCost,
+  logAgentUsage,
+  summarizeAgentUsage,
+  type AgentUsageTelemetry,
   type FrontierLogger,
   type LogRecord
 } from '@shapeshift-labs/frontier-logging';
@@ -254,6 +258,36 @@ import {
 - `compactLogBatch(records, now?)`, `encodeLogBatch(records)`, and `decodeLogBatch(bytes)` provide compact transport for records.
 
 The root import is intentionally generic. It does not load Frontier patch adapters, CRDT adapters, Node file sinks, or exporter code.
+
+### Agent Usage Telemetry
+
+```ts
+import { logAgentUsage } from '@shapeshift-labs/frontier-logging';
+
+logAgentUsage(logger, 'info', 'agent.swarm.autonomous_merge.usage', {
+  modelId: 'gpt-5.5',
+  inputTokens: 2000,
+  cachedInputTokens: 1200,
+  outputTokens: 500,
+  runtimeMs: 4210,
+  pricing: {
+    currency: 'USD',
+    inputCostPerUnit: 5,
+    cachedInputCostPerUnit: 0.5,
+    outputCostPerUnit: 30,
+    unitTokens: 1000000
+  },
+  wasteFlags: ['stale-worker-rerun']
+}, {
+  swarmId: 'swarm-1',
+  lane: 'autonomous-merge',
+  coordinatorReview: 'routine-not-human-blocker'
+});
+```
+
+`summarizeAgentUsage()` returns JSON telemetry with `kind: 'agent-usage'`, `modelId`, input/cached/uncached/output token counts, optional `runtimeMs`, optional `estimatedCost`, and optional `wasteFlags`. `estimateAgentUsageCost()` accepts generic per-unit pricing so dashboards can attach estimates when pricing data is available without baking a provider or repository into the log shape.
+
+For continuous autonomous workers, routine coordinator review should be recorded as normal workflow context, not as a human blocker. Reserve `wasteFlags` for actionable cost signals such as stale worker reruns, idle leases, duplicate shards, or retries that consumed extra tokens.
 
 ### Browser Telemetry
 
@@ -327,6 +361,7 @@ This package owns:
 
 - generic structured logging,
 - bounded log buffers and compact log batches,
+- agent token, cost, runtime, and waste telemetry records,
 - browser telemetry buffers and privacy sanitizers,
 - Node file sinks,
 - OpenTelemetry and Perfetto JSON exporters,
@@ -355,7 +390,7 @@ npm run bench
 npm run pack:dry
 ```
 
-The package test suite covers root and subpath imports, disabled lazy logging, child contexts, spans, patch summaries, structural CRDT update summaries, log batch encoding, browser telemetry sanitization, offline buffers, file sinks, exporters, and benchmark trace attachment. The fuzzer varies patches, structural CRDT updates, redaction, browser telemetry, and compact batch round-trips.
+The package test suite covers root and subpath imports, disabled lazy logging, child contexts, spans, agent usage records, patch summaries, structural CRDT update summaries, log batch encoding, browser telemetry sanitization, offline buffers, file sinks, exporters, and benchmark trace attachment. The fuzzer varies patches, structural CRDT updates, redaction, browser telemetry, and compact batch round-trips.
 
 ## Benchmarks
 

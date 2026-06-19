@@ -58,6 +58,59 @@ export interface CrdtUpdateTelemetry {
   pathSamples: string[];
 }
 
+export interface AgentUsagePricing {
+  currency?: string;
+  inputCostPerUnit?: number;
+  cachedInputCostPerUnit?: number;
+  outputCostPerUnit?: number;
+  unitTokens?: number;
+}
+
+export interface AgentUsageCostEstimateInput {
+  currency?: string;
+  totalCost?: number;
+  inputCost?: number;
+  cachedInputCost?: number;
+  uncachedInputCost?: number;
+  outputCost?: number;
+  unitTokens?: number;
+}
+
+export interface AgentUsageCostEstimate extends JsonObject {
+  totalCost: number;
+  currency?: string;
+  inputCost?: number;
+  cachedInputCost?: number;
+  uncachedInputCost?: number;
+  outputCost?: number;
+  unitTokens?: number;
+}
+
+export interface AgentUsageTelemetryInput {
+  modelId: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  uncachedInputTokens?: number;
+  outputTokens?: number;
+  runtimeMs?: number;
+  estimatedCost?: number | AgentUsageCostEstimateInput;
+  pricing?: AgentUsagePricing;
+  wasteFlags?: readonly string[];
+}
+
+export interface AgentUsageTelemetry extends JsonObject {
+  kind: 'agent-usage';
+  modelId: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  uncachedInputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  runtimeMs?: number;
+  estimatedCost?: AgentUsageCostEstimate;
+  wasteFlags?: string[];
+}
+
 export interface LogEventOptions {
   attributes?: LogAttributesInput;
   message?: string;
@@ -352,6 +405,102 @@ export function createScheduledLogSink(sink: LogSink, options: ScheduledLogSinkO
       sink.clear?.();
     }
   };
+}
+
+export function summarizeAgentUsage(input: AgentUsageTelemetryInput): AgentUsageTelemetry {
+  const cachedInputTokens = readOptionalNonNegativeInt(input.cachedInputTokens);
+  let inputTokens = readOptionalNonNegativeInt(input.inputTokens);
+  let uncachedInputTokens = readOptionalNonNegativeInt(input.uncachedInputTokens);
+  const outputTokens = readOptionalNonNegativeInt(input.outputTokens);
+  const runtimeMs = readOptionalNonNegativeNumber(input.runtimeMs);
+
+  if (inputTokens === undefined && (cachedInputTokens !== undefined || uncachedInputTokens !== undefined)) {
+    inputTokens = (cachedInputTokens || 0) + (uncachedInputTokens || 0);
+  }
+  if (uncachedInputTokens === undefined && inputTokens !== undefined && cachedInputTokens !== undefined) {
+    uncachedInputTokens = Math.max(0, inputTokens - cachedInputTokens);
+  }
+
+  const telemetry: AgentUsageTelemetry = {
+    kind: 'agent-usage',
+    modelId: input.modelId
+  };
+  if (inputTokens !== undefined) telemetry.inputTokens = inputTokens;
+  if (cachedInputTokens !== undefined) telemetry.cachedInputTokens = cachedInputTokens;
+  if (uncachedInputTokens !== undefined) telemetry.uncachedInputTokens = uncachedInputTokens;
+  if (outputTokens !== undefined) telemetry.outputTokens = outputTokens;
+  if (inputTokens !== undefined || outputTokens !== undefined) telemetry.totalTokens = (inputTokens || 0) + (outputTokens || 0);
+  if (runtimeMs !== undefined) telemetry.runtimeMs = runtimeMs;
+  const estimatedCost = normalizeAgentUsageCostEstimate(input.estimatedCost) ||
+    (input.pricing === undefined ? undefined : estimateAgentUsageCost({
+      modelId: input.modelId,
+      inputTokens,
+      cachedInputTokens,
+      uncachedInputTokens,
+      outputTokens
+    }, input.pricing));
+  if (estimatedCost !== undefined) telemetry.estimatedCost = estimatedCost;
+  const wasteFlags = normalizeWasteFlags(input.wasteFlags);
+  if (wasteFlags !== undefined) telemetry.wasteFlags = wasteFlags;
+  return telemetry;
+}
+
+export function estimateAgentUsageCost(
+  usage: AgentUsageTelemetryInput | AgentUsageTelemetry,
+  pricing: AgentUsagePricing
+): AgentUsageCostEstimate | undefined {
+  const unitTokens = readOptionalPositiveNumber(pricing.unitTokens) || 1;
+  const inputTokens = readOptionalNonNegativeInt(usage.inputTokens);
+  const cachedInputTokens = readOptionalNonNegativeInt(usage.cachedInputTokens);
+  const uncachedInputTokens = readOptionalNonNegativeInt(usage.uncachedInputTokens) ??
+    (inputTokens !== undefined && cachedInputTokens !== undefined ? Math.max(0, inputTokens - cachedInputTokens) : undefined);
+  const outputTokens = readOptionalNonNegativeInt(usage.outputTokens);
+  const inputCostPerUnit = readOptionalNonNegativeNumber(pricing.inputCostPerUnit);
+  const cachedInputCostPerUnit = readOptionalNonNegativeNumber(pricing.cachedInputCostPerUnit);
+  const outputCostPerUnit = readOptionalNonNegativeNumber(pricing.outputCostPerUnit);
+  let inputCost: number | undefined;
+  let cachedInputCost: number | undefined;
+  let uncachedInputCost: number | undefined;
+  let outputCost: number | undefined;
+
+  if (cachedInputTokens !== undefined && cachedInputCostPerUnit !== undefined) {
+    cachedInputCost = costForTokens(cachedInputTokens, cachedInputCostPerUnit, unitTokens);
+  }
+  if (uncachedInputTokens !== undefined && inputCostPerUnit !== undefined) {
+    uncachedInputCost = costForTokens(uncachedInputTokens, inputCostPerUnit, unitTokens);
+  } else if (cachedInputTokens === undefined && inputTokens !== undefined && inputCostPerUnit !== undefined) {
+    inputCost = costForTokens(inputTokens, inputCostPerUnit, unitTokens);
+  }
+  if (cachedInputCost !== undefined || uncachedInputCost !== undefined) {
+    inputCost = (cachedInputCost || 0) + (uncachedInputCost || 0);
+  }
+  if (outputTokens !== undefined && outputCostPerUnit !== undefined) {
+    outputCost = costForTokens(outputTokens, outputCostPerUnit, unitTokens);
+  }
+  const totalCost = sumDefined(inputCost, outputCost);
+  if (totalCost === undefined) return undefined;
+  const out: AgentUsageCostEstimate = { totalCost };
+  if (pricing.currency !== undefined) out.currency = pricing.currency;
+  if (inputCost !== undefined) out.inputCost = inputCost;
+  if (cachedInputCost !== undefined) out.cachedInputCost = cachedInputCost;
+  if (uncachedInputCost !== undefined) out.uncachedInputCost = uncachedInputCost;
+  if (outputCost !== undefined) out.outputCost = outputCost;
+  if (pricing.unitTokens !== undefined) out.unitTokens = unitTokens;
+  return out;
+}
+
+export function logAgentUsage(
+  logger: FrontierLogger,
+  level: LogLevelInput,
+  name: string,
+  usage: AgentUsageTelemetryInput,
+  attributes?: LogAttributesInput
+): LogRecord | undefined {
+  if (!logger.isEnabled(level)) return undefined;
+  return logger.record(level, name, {
+    attributes,
+    telemetry: summarizeAgentUsage(usage)
+  });
 }
 
 export function compactLogBatch(records: readonly LogRecord[], now: number = Date.now()): CompactLogBatch {
@@ -890,6 +1039,74 @@ function readOptionalPositiveInt(value: number | undefined): number | undefined 
   if (value === undefined) return undefined;
   const number = Math.floor(Number(value));
   return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function readOptionalNonNegativeInt(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const number = Math.floor(Number(value));
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function readOptionalNonNegativeNumber(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function readOptionalPositiveNumber(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+}
+
+function normalizeAgentUsageCostEstimate(input: number | AgentUsageCostEstimateInput | undefined): AgentUsageCostEstimate | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input === 'number') {
+    const totalCost = readOptionalNonNegativeNumber(input);
+    return totalCost === undefined ? undefined : { totalCost };
+  }
+  let inputCost = readOptionalNonNegativeNumber(input.inputCost);
+  const cachedInputCost = readOptionalNonNegativeNumber(input.cachedInputCost);
+  const uncachedInputCost = readOptionalNonNegativeNumber(input.uncachedInputCost);
+  const outputCost = readOptionalNonNegativeNumber(input.outputCost);
+  if (inputCost === undefined) inputCost = sumDefined(cachedInputCost, uncachedInputCost);
+  const totalCost = readOptionalNonNegativeNumber(input.totalCost) ?? sumDefined(inputCost, outputCost);
+  if (totalCost === undefined) return undefined;
+  const out: AgentUsageCostEstimate = { totalCost };
+  if (input.currency !== undefined) out.currency = input.currency;
+  if (inputCost !== undefined) out.inputCost = inputCost;
+  if (cachedInputCost !== undefined) out.cachedInputCost = cachedInputCost;
+  if (uncachedInputCost !== undefined) out.uncachedInputCost = uncachedInputCost;
+  if (outputCost !== undefined) out.outputCost = outputCost;
+  const unitTokens = readOptionalPositiveNumber(input.unitTokens);
+  if (unitTokens !== undefined) out.unitTokens = unitTokens;
+  return out;
+}
+
+function normalizeWasteFlags(input: readonly string[] | undefined): string[] | undefined {
+  if (input === undefined) return undefined;
+  const out: string[] = [];
+  for (let i = 0, length = input.length; i < length; i++) {
+    const flag = String(input[i]).trim();
+    if (flag.length > 0 && !out.includes(flag)) out[out.length] = flag;
+  }
+  return out.length === 0 ? undefined : out;
+}
+
+function costForTokens(tokens: number, costPerUnit: number, unitTokens: number): number {
+  return (tokens / unitTokens) * costPerUnit;
+}
+
+function sumDefined(...values: Array<number | undefined>): number | undefined {
+  let total = 0;
+  let seen = false;
+  for (let i = 0, length = values.length; i < length; i++) {
+    const value = values[i];
+    if (value === undefined) continue;
+    total += value;
+    seen = true;
+  }
+  return seen ? total : undefined;
 }
 
 function sanitizeRecord(record: LogRecord, controls: LoggerControls): LogRecord {
