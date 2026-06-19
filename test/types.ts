@@ -26,10 +26,13 @@ import {
 import {
   logCrdtUpdate,
   logPatch,
+  logRegistryGraph,
   summarizeCrdtUpdate,
   summarizePatch,
+  summarizeRegistryGraph,
   type CrdtUpdate,
-  type CrdtUpdateInput
+  type CrdtUpdateInput,
+  type RegistryGraphTelemetry
 } from '../dist/frontier.js';
 import { createFileLogSink } from '../dist/node.js';
 import {
@@ -84,6 +87,23 @@ const crdtInput: CrdtUpdateInput = crdtUpdate;
 const crdtTelemetry = summarizeCrdtUpdate(crdtInput);
 logCrdtUpdate(logger, 'info', 'types.crdt', crdtInput);
 
+const registryGraph = {
+  kind: 'frontier.registry.graph' as const,
+  version: 1 as const,
+  entries: [{
+    id: 'types.action',
+    kind: 'action',
+    feature: 'types',
+    package: '@app/types',
+    source: { file: 'src/types.ts' },
+    tags: ['types']
+  }],
+  records: [],
+  edges: [{ from: 'entry:types.action', to: 'path:/types/value', kind: 'declares-read' }]
+};
+const registryTelemetry: RegistryGraphTelemetry = summarizeRegistryGraph(registryGraph);
+logRegistryGraph(logger, 'info', 'types.registry', registryGraph);
+
 const browserBuffer: BrowserTelemetryBuffer = createBrowserTelemetryBuffer({
   sessionId: 'types-browser',
   capacity: 8
@@ -125,4 +145,5 @@ void decoded;
 void batch;
 void patchTelemetry;
 void crdtTelemetry;
+void registryTelemetry;
 void browserBatch;

@@ -4,14 +4,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { diff } from '@shapeshift-labs/frontier';
 import {
+  logAutonomousMergeApplyDecision,
+  logAutonomousMergeGateRun,
+  logAutonomousMergeLaneLifecycle,
+  logCoordinatorLease,
+  logAutonomousMergeWorker,
+  logSemanticStreamRecord,
   compactLogBatch,
   createBrowserLogSink,
   createJsonLogSink,
   createLogBuffer,
   createLogger,
   createNdjsonLogSink,
+  createScheduledLogSink,
   decodeLogBatch,
-  encodeLogBatch
+  encodeLogBatch,
+  estimateAgentUsageCost,
+  logAgentUsage,
+  summarizeAgentUsage
 } from '@shapeshift-labs/frontier-logging';
 import {
   compactBrowserTelemetryBatch,
@@ -25,8 +35,10 @@ import {
 import {
   logCrdtUpdate,
   logPatch,
+  logRegistryGraph,
   summarizeCrdtUpdate,
-  summarizePatch
+  summarizePatch,
+  summarizeRegistryGraph
 } from '@shapeshift-labs/frontier-logging/frontier';
 import { createFileLogSink } from '@shapeshift-labs/frontier-logging/node';
 import {
@@ -100,14 +112,428 @@ assert.ok(crdtTelemetry.byteLength > 0);
 const crdtRecord = logCrdtUpdate(logger, 'info', 'crdt.update', update, { peer: 'remote' });
 assert.strictEqual(crdtRecord.crdt.actor, 'logging-a');
 
+const registryGraph = {
+  kind: 'frontier.registry.graph',
+  version: 1,
+  entries: [{
+    id: 'todo.toggle',
+    kind: 'action',
+    feature: 'todos',
+    package: '@app/todos',
+    source: { file: 'src/features/todos/actions.ts' },
+    tags: ['mutation']
+  }],
+  records: [{ id: 'act-1', entryId: 'todo.toggle', kind: 'action', status: 'ok' }],
+  edges: [{ from: 'entry:todo.toggle', to: 'path:/todos/*/done', kind: 'declares-write' }]
+};
+const registryTelemetry = summarizeRegistryGraph(registryGraph);
+assert.strictEqual(registryTelemetry.kind, 'registry');
+assert.strictEqual(registryTelemetry.entryCount, 1);
+assert.strictEqual(registryTelemetry.packageCount, 1);
+assert.strictEqual(registryTelemetry.tagCount, 1);
+assert.strictEqual(registryTelemetry.fileCount, 1);
+assert.deepStrictEqual(registryTelemetry.featureSamples, ['todos']);
+assert.deepStrictEqual(registryTelemetry.packageSamples, ['@app/todos']);
+assert.deepStrictEqual(registryTelemetry.pathSamples, ['/todos/*/done']);
+const registryRecord = logRegistryGraph(logger, 'info', 'registry.graph', registryGraph, { feature: 'todos' });
+assert.strictEqual(registryRecord.telemetry.entryCount, 1);
+
+const agentUsage = summarizeAgentUsage({
+  modelId: 'gpt-5.5',
+  inputTokens: 2000,
+  cachedInputTokens: 1200,
+  outputTokens: 500,
+  runtimeMs: 4210,
+  pricing: {
+    currency: 'USD',
+    inputCostPerUnit: 5,
+    cachedInputCostPerUnit: 0.5,
+    outputCostPerUnit: 30,
+    unitTokens: 1000000
+  },
+  wasteFlags: ['stale-worker-rerun', 'stale-worker-rerun']
+});
+assert.strictEqual(agentUsage.kind, 'agent-usage');
+assert.strictEqual(agentUsage.modelId, 'gpt-5.5');
+assert.strictEqual(agentUsage.inputTokens, 2000);
+assert.strictEqual(agentUsage.cachedInputTokens, 1200);
+assert.strictEqual(agentUsage.uncachedInputTokens, 800);
+assert.strictEqual(agentUsage.outputTokens, 500);
+assert.strictEqual(agentUsage.totalTokens, 2500);
+assert.strictEqual(agentUsage.runtimeMs, 4210);
+assert.deepStrictEqual(agentUsage.wasteFlags, ['stale-worker-rerun']);
+assert.strictEqual(agentUsage.estimatedCost.currency, 'USD');
+assert.strictEqual(agentUsage.estimatedCost.unitTokens, 1000000);
+assert.ok(Math.abs(agentUsage.estimatedCost.totalCost - 0.0196) < 1e-12);
+assert.deepStrictEqual(estimateAgentUsageCost(agentUsage, {
+  currency: 'USD',
+  inputCostPerUnit: 5,
+  cachedInputCostPerUnit: 0.5,
+  outputCostPerUnit: 30,
+  unitTokens: 1000000
+}), agentUsage.estimatedCost);
+
+const agentUsageRecord = logAgentUsage(logger, 'info', 'agent.swarm.autonomous_merge.usage', {
+  modelId: 'gpt-5.5',
+  inputTokens: 2000,
+  cachedInputTokens: 1200,
+  outputTokens: 500,
+  runtimeMs: 4210,
+  estimatedCost: agentUsage.estimatedCost,
+  wasteFlags: ['stale-worker-rerun']
+}, {
+  swarmId: 'swarm-1',
+  lane: 'autonomous-merge',
+  coordinatorReview: 'routine-not-human-blocker'
+});
+assert.strictEqual(agentUsageRecord.telemetry.kind, 'agent-usage');
+assert.strictEqual(agentUsageRecord.telemetry.estimatedCost.totalCost, agentUsage.estimatedCost.totalCost);
+assert.strictEqual(agentUsageRecord.attributes.coordinatorReview, 'routine-not-human-blocker');
+
+const autonomousMergeBuffer = createLogBuffer({ capacity: 9 });
+const autonomousMergeLogger = createLogger({
+  level: 'trace',
+  buffer: autonomousMergeBuffer,
+  redactKeys: ['token'],
+  redactPaths: ['attributes.nested.secret']
+});
+const autonomousMergeWorkerRecord = logAutonomousMergeWorker(autonomousMergeLogger, 'info', {
+  workerId: 'worker-17',
+  lane: 'autonomous-merge',
+  coordinatorId: 'coordinator-4',
+  leaseId: 'lease-9',
+  status: 'running',
+  phase: 'apply',
+  queueDepth: 4,
+  activeCount: 1,
+  completedCount: 12,
+  failedCount: 0,
+  rerunCount: 2,
+  durationMs: 83,
+  reasonCode: 'lease-backed-apply'
+}, {
+  token: 'secret-token',
+  nested: { secret: 'hide-me' }
+});
+assert.strictEqual(autonomousMergeWorkerRecord.name, 'agent.swarm.autonomous_merge.worker');
+assert.strictEqual(autonomousMergeWorkerRecord.telemetry.kind, 'autonomous-merge-worker');
+assert.strictEqual(autonomousMergeWorkerRecord.attributes.token, '[redacted]');
+assert.strictEqual(autonomousMergeWorkerRecord.attributes.nested.secret, '[redacted]');
+assert.deepStrictEqual(Object.keys(autonomousMergeWorkerRecord.telemetry).sort(), [
+  'activeCount',
+  'completedCount',
+  'coordinatorId',
+  'durationMs',
+  'failedCount',
+  'kind',
+  'lane',
+  'leaseId',
+  'phase',
+  'queueDepth',
+  'reasonCode',
+  'rerunCount',
+  'status',
+  'workerId'
+]);
+
+const autonomousMergeLease = logCoordinatorLease(autonomousMergeLogger, 'info', {
+  leaseId: 'lease-9',
+  coordinatorId: 'coordinator-4',
+  lane: 'autonomous-merge',
+  state: 'renewed',
+  leaseAgeMs: 1200,
+  expiresInMs: 800,
+  renewCount: 3,
+  durationMs: 6,
+  reasonCode: 'lease-refresh'
+});
+assert.strictEqual(autonomousMergeLease.name, 'agent.swarm.autonomous_merge.lease');
+assert.strictEqual(autonomousMergeLease.telemetry.kind, 'autonomous-merge-lease');
+assert.deepStrictEqual(Object.keys(autonomousMergeLease.telemetry).sort(), [
+  'coordinatorId',
+  'durationMs',
+  'expiresInMs',
+  'kind',
+  'lane',
+  'leaseAgeMs',
+  'leaseId',
+  'reasonCode',
+  'renewCount',
+  'state'
+]);
+
+const autonomousMergeGate = logAutonomousMergeGateRun(autonomousMergeLogger, 'info', {
+  gateId: 'semantic-gate',
+  lane: 'autonomous-merge',
+  result: 'passed',
+  checkedCount: 5,
+  passedCount: 5,
+  failedCount: 0,
+  blockedCount: 0,
+  durationMs: 4,
+  reasonCode: 'all-checks-pass'
+});
+assert.strictEqual(autonomousMergeGate.name, 'agent.swarm.autonomous_merge.gate');
+assert.strictEqual(autonomousMergeGate.telemetry.kind, 'autonomous-merge-gate');
+assert.deepStrictEqual(Object.keys(autonomousMergeGate.telemetry).sort(), [
+  'blockedCount',
+  'checkedCount',
+  'durationMs',
+  'failedCount',
+  'gateId',
+  'kind',
+  'lane',
+  'passedCount',
+  'reasonCode',
+  'result'
+]);
+
+const autonomousMergeFailedGate = logAutonomousMergeGateRun(autonomousMergeLogger, 'info', {
+  gateId: 'semantic-gate',
+  lane: 'autonomous-merge',
+  result: 'failed',
+  checkedCount: 3,
+  passedCount: 2,
+  failedCount: 1,
+  blockedCount: 0,
+  durationMs: 9,
+  failureClass: 'oracle-mismatch',
+  reasonCode: 'oracle-stub-disagrees'
+});
+assert.strictEqual(autonomousMergeFailedGate.telemetry.failureClass, 'oracle-mismatch');
+assert.deepStrictEqual(Object.keys(autonomousMergeFailedGate.telemetry).sort(), [
+  'blockedCount',
+  'checkedCount',
+  'durationMs',
+  'failedCount',
+  'failureClass',
+  'gateId',
+  'kind',
+  'lane',
+  'passedCount',
+  'reasonCode',
+  'result'
+]);
+
+const autonomousMergeApply = logAutonomousMergeApplyDecision(autonomousMergeLogger, 'info', {
+  decisionId: 'apply-42',
+  lane: 'autonomous-merge',
+  workerId: 'worker-17',
+  leaseId: 'lease-9',
+  outcome: 'applied',
+  patchCount: 3,
+  changedPathCount: 2,
+  conflictCount: 0,
+  rerunCount: 0,
+  durationMs: 11,
+  reasonCode: 'mergeable'
+});
+assert.strictEqual(autonomousMergeApply.name, 'agent.swarm.autonomous_merge.apply');
+assert.strictEqual(autonomousMergeApply.telemetry.kind, 'autonomous-merge-apply');
+assert.deepStrictEqual(Object.keys(autonomousMergeApply.telemetry).sort(), [
+  'changedPathCount',
+  'conflictCount',
+  'decisionId',
+  'durationMs',
+  'kind',
+  'lane',
+  'leaseId',
+  'outcome',
+  'patchCount',
+  'reasonCode',
+  'rerunCount',
+  'workerId'
+]);
+
+const autonomousMergeLane = logAutonomousMergeLaneLifecycle(autonomousMergeLogger, 'info', {
+  lane: 'autonomous-merge',
+  state: 'draining',
+  fromState: 'active',
+  workerCount: 2,
+  leaseCount: 1,
+  queuedCount: 0,
+  completedCount: 18,
+  failedCount: 0,
+  durationMs: 14,
+  reasonCode: 'queue-empty'
+});
+assert.strictEqual(autonomousMergeLane.name, 'agent.swarm.autonomous_merge.lane');
+assert.strictEqual(autonomousMergeLane.telemetry.kind, 'autonomous-merge-lane');
+assert.deepStrictEqual(Object.keys(autonomousMergeLane.telemetry).sort(), [
+  'completedCount',
+  'durationMs',
+  'failedCount',
+  'fromState',
+  'kind',
+  'lane',
+  'leaseCount',
+  'queuedCount',
+  'reasonCode',
+  'state',
+  'workerCount'
+]);
+
+const semanticStreamClaim = logSemanticStreamRecord(autonomousMergeLogger, 'info', {
+  kind: 'slice.claimed',
+  semanticRegionKey: 'region:src/apply.ts#apply',
+  semanticRegionKeys: ['region:src/apply.ts#apply', 'region:src/apply.ts#apply'],
+  sourceHead: 'head-a',
+  sourceHeads: ['head-a', 'head-a', 'head-b'],
+  currentHead: 'head-b',
+  currentHeads: ['head-b', 'head-b'],
+  taskId: 'task:semantic-merge',
+  taskIds: ['task:semantic-merge', 'task:semantic-merge'],
+  leaseKey: 'lease:src/apply.ts#apply',
+  leaseKeys: ['lease:src/apply.ts#apply', 'lease:src/apply.ts#apply']
+}, {
+  lane: 'autonomous-merge',
+  swarmId: 'swarm-1'
+});
+assert.strictEqual(semanticStreamClaim.name, 'agent.swarm.semantic_stream.slice.claimed');
+assert.strictEqual(semanticStreamClaim.telemetry.kind, 'slice.claimed');
+assert.deepStrictEqual(Object.keys(semanticStreamClaim.telemetry).sort(), [
+  'currentHead',
+  'currentHeads',
+  'kind',
+  'leaseKey',
+  'leaseKeys',
+  'semanticRegionKey',
+  'semanticRegionKeys',
+  'sourceHead',
+  'sourceHeads',
+  'taskId',
+  'taskIds'
+]);
+assert.deepStrictEqual(semanticStreamClaim.telemetry.semanticRegionKeys, ['region:src/apply.ts#apply']);
+assert.deepStrictEqual(semanticStreamClaim.telemetry.sourceHeads, ['head-a', 'head-b']);
+assert.deepStrictEqual(semanticStreamClaim.telemetry.taskIds, ['task:semantic-merge']);
+assert.deepStrictEqual(semanticStreamClaim.telemetry.leaseKeys, ['lease:src/apply.ts#apply']);
+
+const semanticStreamPromotion = logSemanticStreamRecord(autonomousMergeLogger, 'info', {
+  kind: 'merge.promoted',
+  semanticRegionKey: 'region:src/apply.ts#apply',
+  sourceHead: 'head-a',
+  currentHead: 'head-parent',
+  taskId: 'task:semantic-merge',
+  mergeId: 'merge-1',
+  promotionParent: 'lane:root'
+}, {
+  lane: 'autonomous-merge',
+  swarmId: 'swarm-1'
+});
+assert.strictEqual(semanticStreamPromotion.name, 'agent.swarm.semantic_stream.merge.promoted');
+assert.strictEqual(semanticStreamPromotion.telemetry.kind, 'merge.promoted');
+assert.deepStrictEqual(Object.keys(semanticStreamPromotion.telemetry).sort(), [
+  'currentHead',
+  'kind',
+  'mergeId',
+  'promotionParent',
+  'semanticRegionKey',
+  'sourceHead',
+  'taskId'
+]);
+
+const semanticStreamDump = logSemanticStreamRecord(autonomousMergeLogger, 'info', {
+  kind: 'slice.applied',
+  semanticRegionKey: 'region:src/apply.ts#apply',
+  sourceHead: [
+    'function applyChange(state) {',
+    '  return { ...state, applied: true };',
+    '}',
+    '// the helper should not preserve this raw source dump'
+  ].join('\n'),
+  sourceHeads: [
+    [
+      'function applyChange(state) {',
+      '  return { ...state, applied: true };',
+      '}'
+    ].join('\n'),
+    [
+      'function applyChange(state) {',
+      '  return { ...state, applied: true };',
+      '}'
+    ].join('\n')
+  ],
+  currentHead: 'head-c',
+  currentHeads: [
+    [
+      'function applyChange(state) {',
+      '  return { ...state, applied: true };',
+      '}'
+    ].join('\n')
+  ],
+  taskId: 'task:semantic-merge',
+  leaseKey: 'lease:src/apply.ts#apply'
+});
+assert.strictEqual(semanticStreamDump.name, 'agent.swarm.semantic_stream.slice.applied');
+assert.ok(semanticStreamDump.telemetry.sourceHead.startsWith('semantic-stream-id:'));
+assert.ok(semanticStreamDump.telemetry.sourceHeads[0].startsWith('semantic-stream-id:'));
+assert.ok(semanticStreamDump.telemetry.currentHeads[0].startsWith('semantic-stream-id:'));
+assert.ok(!semanticStreamDump.telemetry.sourceHead.includes('function applyChange'));
+assert.deepStrictEqual(semanticStreamDump.telemetry.sourceHeads, [semanticStreamDump.telemetry.sourceHeads[0]]);
+
+const autonomousMergeRecords = autonomousMergeLogger.snapshot();
+assert.strictEqual(autonomousMergeRecords.length, 9);
+assert.deepStrictEqual(autonomousMergeRecords.map((record) => record.name), [
+  'agent.swarm.autonomous_merge.worker',
+  'agent.swarm.autonomous_merge.lease',
+  'agent.swarm.autonomous_merge.gate',
+  'agent.swarm.autonomous_merge.gate',
+  'agent.swarm.autonomous_merge.apply',
+  'agent.swarm.autonomous_merge.lane',
+  'agent.swarm.semantic_stream.slice.claimed',
+  'agent.swarm.semantic_stream.merge.promoted',
+  'agent.swarm.semantic_stream.slice.applied'
+]);
+
 const records = logger.snapshot();
 assert.deepStrictEqual(decodeLogBatch(encodeLogBatch(records)), records);
 assert.strictEqual(compactLogBatch(records, 1234).version, 1);
+assert.strictEqual(decodeLogBatch(encodeLogBatch([agentUsageRecord]))[0].telemetry.kind, 'agent-usage');
 
 const ndjsonLines = [];
 const ndjsonLogger = createLogger({ level: 'info', buffer: false, sinks: createNdjsonLogSink((line) => ndjsonLines.push(line)), now: () => 1 });
 ndjsonLogger.info('ndjson.event', { ok: true });
 assert.ok(ndjsonLines[0].endsWith('\n'));
+
+const scheduledRecords = [];
+const scheduledTasks = [];
+const scheduledLogger = createLogger({
+  level: 'info',
+  buffer: false,
+  sinks: createScheduledLogSink({
+    write(record) {
+      scheduledRecords.push(record);
+    },
+    flush() {
+      scheduledRecords.push({ name: 'scheduled.flush' });
+    }
+  }, {
+    scheduler: {
+      schedule(task) {
+        scheduledTasks.push(task);
+        return task;
+      },
+      run(options = {}) {
+        const lane = options.lane;
+        for (let i = 0; i < scheduledTasks.length; i++) {
+          const task = scheduledTasks[i];
+          if (lane !== undefined && task.lane !== lane) continue;
+          scheduledTasks.splice(i, 1);
+          i--;
+          task.run();
+        }
+      }
+    },
+    lane: 'logging'
+  }),
+  now: () => 1
+});
+scheduledLogger.info('scheduled.event');
+assert.strictEqual(scheduledRecords.length, 0);
+assert.strictEqual(scheduledTasks[0].type, 'frontier.logging.write');
+scheduledTasks[0].run();
+assert.strictEqual(scheduledRecords[0].name, 'scheduled.event');
 
 const browserCalls = [];
 const browserLogger = createLogger({

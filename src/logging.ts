@@ -58,6 +58,59 @@ export interface CrdtUpdateTelemetry {
   pathSamples: string[];
 }
 
+export interface AgentUsagePricing {
+  currency?: string;
+  inputCostPerUnit?: number;
+  cachedInputCostPerUnit?: number;
+  outputCostPerUnit?: number;
+  unitTokens?: number;
+}
+
+export interface AgentUsageCostEstimateInput {
+  currency?: string;
+  totalCost?: number;
+  inputCost?: number;
+  cachedInputCost?: number;
+  uncachedInputCost?: number;
+  outputCost?: number;
+  unitTokens?: number;
+}
+
+export interface AgentUsageCostEstimate extends JsonObject {
+  totalCost: number;
+  currency?: string;
+  inputCost?: number;
+  cachedInputCost?: number;
+  uncachedInputCost?: number;
+  outputCost?: number;
+  unitTokens?: number;
+}
+
+export interface AgentUsageTelemetryInput {
+  modelId: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  uncachedInputTokens?: number;
+  outputTokens?: number;
+  runtimeMs?: number;
+  estimatedCost?: number | AgentUsageCostEstimateInput;
+  pricing?: AgentUsagePricing;
+  wasteFlags?: readonly string[];
+}
+
+export interface AgentUsageTelemetry extends JsonObject {
+  kind: 'agent-usage';
+  modelId: string;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  uncachedInputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  runtimeMs?: number;
+  estimatedCost?: AgentUsageCostEstimate;
+  wasteFlags?: string[];
+}
+
 export interface LogEventOptions {
   attributes?: LogAttributesInput;
   message?: string;
@@ -111,6 +164,38 @@ export interface LoggerOptions {
   maxStringLength?: number;
   maxAttributeDepth?: number;
   maxPayloadBytes?: number;
+}
+
+export interface LogSchedulerTask {
+  id?: string;
+  type?: string;
+  input?: unknown;
+  lane?: string;
+  area?: string;
+  priority?: unknown;
+  units?: number;
+  key?: string;
+  causeId?: string;
+  parentId?: string;
+  dependsOn?: readonly string[];
+  metadata?: Record<string, unknown>;
+  run(context?: unknown): unknown;
+}
+
+export interface LogSchedulerLike {
+  schedule(task: LogSchedulerTask): unknown;
+  run?(options?: unknown): unknown;
+  requestRun?(options?: unknown): unknown;
+}
+
+export interface ScheduledLogSinkOptions {
+  scheduler: LogSchedulerLike;
+  idPrefix?: string;
+  lane?: string;
+  priority?: unknown;
+  units?: number;
+  autoRun?: boolean;
+  runOptions?: unknown;
 }
 
 export interface FrontierLogger {
@@ -222,6 +307,14 @@ interface LoggerControls {
   maxPayloadBytes: number | undefined;
 }
 
+interface TraceIdRef {
+  value?: string;
+}
+
+interface SpanIdSourceRef {
+  next?: () => string;
+}
+
 export const LOG_LEVELS: Record<LogLevel, number> = {
   trace: 1,
   debug: 5,
@@ -231,7 +324,6 @@ export const LOG_LEVELS: Record<LogLevel, number> = {
   fatal: 21
 };
 
-const LOG_LEVEL_NAMES: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const TRUNCATED_VALUE = '[truncated]';
@@ -244,14 +336,14 @@ export function createLogger(options: LoggerOptions = {}): FrontierLogger {
     context: cloneJsonObject(options.context),
     resource: cloneJsonObject(options.resource),
     scope: options.scope,
-    traceId: options.traceId || createTraceId(),
+    traceIdRef: options.traceId ? { value: options.traceId } : {},
     spanId: options.spanId,
     parentSpanId: options.parentSpanId,
     sinks,
     buffer,
     now: options.now || Date.now,
     emitSpanStart: options.emitSpanStart !== false,
-    idSource: createIdSource(),
+    idSourceRef: {},
     controls: createControls(options)
   });
 }
@@ -259,6 +351,156 @@ export function createLogger(options: LoggerOptions = {}): FrontierLogger {
 export function createLogBuffer(options: { capacity?: number } = {}): LogBuffer {
   const capacity = Math.max(1, Math.floor(options.capacity || 1024));
   return new RingLogBuffer(capacity);
+}
+
+export function createScheduledLogSink(sink: LogSink, options: ScheduledLogSinkOptions): LogSink {
+  if (sink === null || typeof sink !== 'object' || typeof sink.write !== 'function') {
+    throw new TypeError('frontier logging scheduled sink requires a sink with write()');
+  }
+  const scheduler = options.scheduler;
+  if (scheduler === null || typeof scheduler !== 'object' || typeof scheduler.schedule !== 'function') {
+    throw new TypeError('frontier logging scheduler must expose schedule()');
+  }
+  const idPrefix = options.idPrefix ?? 'frontier.logging';
+  const lane = options.lane ?? 'logging';
+  const priority = options.priority ?? 'low';
+  const units = options.units ?? 1;
+  let sequence = 0;
+  return {
+    write(record) {
+      scheduleLogSinkWork(scheduler, options, {
+        id: idPrefix + '.write:' + ++sequence,
+        type: 'frontier.logging.write',
+        input: record,
+        lane,
+        area: 'logging',
+        priority,
+        units,
+        key: record.traceId ?? record.name ?? record.level,
+        metadata: { level: record.level, name: record.name },
+        run() {
+          sink.write(record);
+        }
+      });
+    },
+    flush() {
+      if (typeof sink.flush !== 'function') return;
+      scheduleLogSinkWork(scheduler, options, {
+        id: idPrefix + '.flush:' + ++sequence,
+        type: 'frontier.logging.flush',
+        lane,
+        area: 'logging',
+        priority,
+        units,
+        key: idPrefix + '.flush',
+        run() {
+          sink.flush?.();
+        }
+      });
+    },
+    snapshot() {
+      return sink.snapshot?.() ?? [];
+    },
+    clear() {
+      sink.clear?.();
+    }
+  };
+}
+
+export function summarizeAgentUsage(input: AgentUsageTelemetryInput): AgentUsageTelemetry {
+  const cachedInputTokens = readOptionalNonNegativeInt(input.cachedInputTokens);
+  let inputTokens = readOptionalNonNegativeInt(input.inputTokens);
+  let uncachedInputTokens = readOptionalNonNegativeInt(input.uncachedInputTokens);
+  const outputTokens = readOptionalNonNegativeInt(input.outputTokens);
+  const runtimeMs = readOptionalNonNegativeNumber(input.runtimeMs);
+
+  if (inputTokens === undefined && (cachedInputTokens !== undefined || uncachedInputTokens !== undefined)) {
+    inputTokens = (cachedInputTokens || 0) + (uncachedInputTokens || 0);
+  }
+  if (uncachedInputTokens === undefined && inputTokens !== undefined && cachedInputTokens !== undefined) {
+    uncachedInputTokens = Math.max(0, inputTokens - cachedInputTokens);
+  }
+
+  const telemetry: AgentUsageTelemetry = {
+    kind: 'agent-usage',
+    modelId: input.modelId
+  };
+  if (inputTokens !== undefined) telemetry.inputTokens = inputTokens;
+  if (cachedInputTokens !== undefined) telemetry.cachedInputTokens = cachedInputTokens;
+  if (uncachedInputTokens !== undefined) telemetry.uncachedInputTokens = uncachedInputTokens;
+  if (outputTokens !== undefined) telemetry.outputTokens = outputTokens;
+  if (inputTokens !== undefined || outputTokens !== undefined) telemetry.totalTokens = (inputTokens || 0) + (outputTokens || 0);
+  if (runtimeMs !== undefined) telemetry.runtimeMs = runtimeMs;
+  const estimatedCost = normalizeAgentUsageCostEstimate(input.estimatedCost) ||
+    (input.pricing === undefined ? undefined : estimateAgentUsageCost({
+      modelId: input.modelId,
+      inputTokens,
+      cachedInputTokens,
+      uncachedInputTokens,
+      outputTokens
+    }, input.pricing));
+  if (estimatedCost !== undefined) telemetry.estimatedCost = estimatedCost;
+  const wasteFlags = normalizeWasteFlags(input.wasteFlags);
+  if (wasteFlags !== undefined) telemetry.wasteFlags = wasteFlags;
+  return telemetry;
+}
+
+export function estimateAgentUsageCost(
+  usage: AgentUsageTelemetryInput | AgentUsageTelemetry,
+  pricing: AgentUsagePricing
+): AgentUsageCostEstimate | undefined {
+  const unitTokens = readOptionalPositiveNumber(pricing.unitTokens) || 1;
+  const inputTokens = readOptionalNonNegativeInt(usage.inputTokens);
+  const cachedInputTokens = readOptionalNonNegativeInt(usage.cachedInputTokens);
+  const uncachedInputTokens = readOptionalNonNegativeInt(usage.uncachedInputTokens) ??
+    (inputTokens !== undefined && cachedInputTokens !== undefined ? Math.max(0, inputTokens - cachedInputTokens) : undefined);
+  const outputTokens = readOptionalNonNegativeInt(usage.outputTokens);
+  const inputCostPerUnit = readOptionalNonNegativeNumber(pricing.inputCostPerUnit);
+  const cachedInputCostPerUnit = readOptionalNonNegativeNumber(pricing.cachedInputCostPerUnit);
+  const outputCostPerUnit = readOptionalNonNegativeNumber(pricing.outputCostPerUnit);
+  let inputCost: number | undefined;
+  let cachedInputCost: number | undefined;
+  let uncachedInputCost: number | undefined;
+  let outputCost: number | undefined;
+
+  if (cachedInputTokens !== undefined && cachedInputCostPerUnit !== undefined) {
+    cachedInputCost = costForTokens(cachedInputTokens, cachedInputCostPerUnit, unitTokens);
+  }
+  if (uncachedInputTokens !== undefined && inputCostPerUnit !== undefined) {
+    uncachedInputCost = costForTokens(uncachedInputTokens, inputCostPerUnit, unitTokens);
+  } else if (cachedInputTokens === undefined && inputTokens !== undefined && inputCostPerUnit !== undefined) {
+    inputCost = costForTokens(inputTokens, inputCostPerUnit, unitTokens);
+  }
+  if (cachedInputCost !== undefined || uncachedInputCost !== undefined) {
+    inputCost = (cachedInputCost || 0) + (uncachedInputCost || 0);
+  }
+  if (outputTokens !== undefined && outputCostPerUnit !== undefined) {
+    outputCost = costForTokens(outputTokens, outputCostPerUnit, unitTokens);
+  }
+  const totalCost = sumDefined(inputCost, outputCost);
+  if (totalCost === undefined) return undefined;
+  const out: AgentUsageCostEstimate = { totalCost };
+  if (pricing.currency !== undefined) out.currency = pricing.currency;
+  if (inputCost !== undefined) out.inputCost = inputCost;
+  if (cachedInputCost !== undefined) out.cachedInputCost = cachedInputCost;
+  if (uncachedInputCost !== undefined) out.uncachedInputCost = uncachedInputCost;
+  if (outputCost !== undefined) out.outputCost = outputCost;
+  if (pricing.unitTokens !== undefined) out.unitTokens = unitTokens;
+  return out;
+}
+
+export function logAgentUsage(
+  logger: FrontierLogger,
+  level: LogLevelInput,
+  name: string,
+  usage: AgentUsageTelemetryInput,
+  attributes?: LogAttributesInput
+): LogRecord | undefined {
+  if (!logger.isEnabled(level)) return undefined;
+  return logger.record(level, name, {
+    attributes,
+    telemetry: summarizeAgentUsage(usage)
+  });
 }
 
 export function compactLogBatch(records: readonly LogRecord[], now: number = Date.now()): CompactLogBatch {
@@ -331,20 +573,33 @@ export function createBrowserLogSink(options: BrowserLogSinkOptions = {}): LogSi
   };
 }
 
+function scheduleLogSinkWork(
+  scheduler: LogSchedulerLike,
+  options: ScheduledLogSinkOptions,
+  task: LogSchedulerTask
+): unknown {
+  const scheduled = scheduler.schedule(task);
+  if (options.autoRun === true) {
+    if (typeof scheduler.requestRun === 'function') scheduler.requestRun(options.runOptions);
+    else if (typeof scheduler.run === 'function') scheduler.run(options.runOptions);
+  }
+  return scheduled;
+}
+
 class FrontierLoggerImpl implements FrontierLogger {
   readonly severityNumber: number;
   readonly level: LogLevel;
   private readonly context: JsonObject | undefined;
   private readonly resource: JsonObject | undefined;
   private readonly scope: string | undefined;
-  private readonly traceId: string;
+  private readonly traceIdRef: TraceIdRef;
   private readonly spanId: string | undefined;
   private readonly parentSpanId: string | undefined;
   private readonly sinks: LogSink[];
   private readonly buffer: LogBuffer | null;
   private readonly now: () => number;
   private readonly emitSpanStart: boolean;
-  private readonly idSource: () => string;
+  private readonly idSourceRef: SpanIdSourceRef;
   private readonly controls: LoggerControls;
   private readonly fastPath: boolean;
 
@@ -353,14 +608,14 @@ class FrontierLoggerImpl implements FrontierLogger {
     context?: JsonObject;
     resource?: JsonObject;
     scope?: string;
-    traceId: string;
+    traceIdRef: TraceIdRef;
     spanId?: string;
     parentSpanId?: string;
     sinks: LogSink[];
     buffer: LogBuffer | null;
     now: () => number;
     emitSpanStart: boolean;
-    idSource: () => string;
+    idSourceRef: SpanIdSourceRef;
     controls: LoggerControls;
   }) {
     this.severityNumber = options.threshold;
@@ -368,14 +623,14 @@ class FrontierLoggerImpl implements FrontierLogger {
     this.context = options.context;
     this.resource = options.resource;
     this.scope = options.scope;
-    this.traceId = options.traceId;
+    this.traceIdRef = options.traceIdRef;
     this.spanId = options.spanId;
     this.parentSpanId = options.parentSpanId;
     this.sinks = options.sinks;
     this.buffer = options.buffer;
     this.now = options.now;
     this.emitSpanStart = options.emitSpanStart;
-    this.idSource = options.idSource;
+    this.idSourceRef = options.idSourceRef;
     this.controls = options.controls;
     this.fastPath = options.controls.sample === undefined &&
       options.controls.sampleRate === 1 &&
@@ -393,36 +648,37 @@ class FrontierLoggerImpl implements FrontierLogger {
       context: mergeObjects(this.context, context),
       resource: this.resource,
       scope: this.scope,
-      traceId: this.traceId,
+      traceIdRef: this.traceIdRef,
       spanId: this.spanId,
       parentSpanId: this.parentSpanId,
       sinks: this.sinks,
       buffer: this.buffer,
       now: this.now,
       emitSpanStart: this.emitSpanStart,
-      idSource: this.idSource,
+      idSourceRef: this.idSourceRef,
       controls: this.controls
     });
   }
 
   startSpan(name: string, attributes?: LogAttributesInput): LogSpan {
-    const spanId = this.idSource();
+    const traceId = this.getTraceId();
+    const spanId = this.nextSpanId();
     const spanLogger = new FrontierLoggerImpl({
       threshold: this.severityNumber,
       context: this.context,
       resource: this.resource,
       scope: this.scope,
-      traceId: this.traceId,
+      traceIdRef: this.traceIdRef,
       spanId,
       parentSpanId: this.spanId,
       sinks: this.sinks,
       buffer: this.buffer,
       now: this.now,
       emitSpanStart: this.emitSpanStart,
-      idSource: this.idSource,
+      idSourceRef: this.idSourceRef,
       controls: this.controls
     });
-    const span = new FrontierSpanImpl(name, this.traceId, spanId, this.spanId, this.now(), spanLogger, this.now);
+    const span = new FrontierSpanImpl(name, traceId, spanId, this.spanId, this.now(), spanLogger, this.now);
     if (this.emitSpanStart) spanLogger.event('trace', name, mergeAttributeInput(attributes, { phase: 'start' }));
     return span;
   }
@@ -552,7 +808,7 @@ class FrontierLoggerImpl implements FrontierLogger {
     crdt?: CrdtUpdateTelemetry
   ): LogRecord {
     const attrs = readAttributes(attributes);
-    const merged = mergeObjects(this.context, attrs);
+    const merged = this.context === undefined ? attrs : mergeObjects(this.context, attrs);
     const record: LogRecord = {
       time: this.now(),
       level,
@@ -561,7 +817,7 @@ class FrontierLoggerImpl implements FrontierLogger {
     };
     if (message !== undefined) record.message = message;
     if (observedTime !== undefined) record.observedTime = observedTime;
-    if (this.traceId) record.traceId = this.traceId;
+    record.traceId = this.getTraceId();
     if (this.spanId) record.spanId = this.spanId;
     if (this.parentSpanId) record.parentSpanId = this.parentSpanId;
     if (this.resource) record.resource = this.resource;
@@ -582,6 +838,24 @@ class FrontierLoggerImpl implements FrontierLogger {
 
   private write(record: LogRecord): void {
     for (let i = 0, length = this.sinks.length; i < length; i++) this.sinks[i].write(record);
+  }
+
+  private getTraceId(): string {
+    let traceId = this.traceIdRef.value;
+    if (traceId === undefined) {
+      traceId = createTraceId();
+      this.traceIdRef.value = traceId;
+    }
+    return traceId;
+  }
+
+  private nextSpanId(): string {
+    let source = this.idSourceRef.next;
+    if (source === undefined) {
+      source = createIdSource();
+      this.idSourceRef.next = source;
+    }
+    return source();
   }
 }
 
@@ -711,12 +985,12 @@ function severityNumber(level: LogLevelInput): number {
 }
 
 function levelName(severity: number): LogLevel {
-  let selected = LOG_LEVEL_NAMES[0];
-  for (let i = 0, length = LOG_LEVEL_NAMES.length; i < length; i++) {
-    const name = LOG_LEVEL_NAMES[i];
-    if (severity >= LOG_LEVELS[name]) selected = name;
-  }
-  return selected;
+  if (severity >= LOG_LEVELS.fatal) return 'fatal';
+  if (severity >= LOG_LEVELS.error) return 'error';
+  if (severity >= LOG_LEVELS.warn) return 'warn';
+  if (severity >= LOG_LEVELS.info) return 'info';
+  if (severity >= LOG_LEVELS.debug) return 'debug';
+  return 'trace';
 }
 
 function readAttributes(input: LogAttributesInput): JsonObject | undefined {
@@ -765,6 +1039,74 @@ function readOptionalPositiveInt(value: number | undefined): number | undefined 
   if (value === undefined) return undefined;
   const number = Math.floor(Number(value));
   return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function readOptionalNonNegativeInt(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const number = Math.floor(Number(value));
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function readOptionalNonNegativeNumber(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function readOptionalPositiveNumber(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+}
+
+function normalizeAgentUsageCostEstimate(input: number | AgentUsageCostEstimateInput | undefined): AgentUsageCostEstimate | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input === 'number') {
+    const totalCost = readOptionalNonNegativeNumber(input);
+    return totalCost === undefined ? undefined : { totalCost };
+  }
+  let inputCost = readOptionalNonNegativeNumber(input.inputCost);
+  const cachedInputCost = readOptionalNonNegativeNumber(input.cachedInputCost);
+  const uncachedInputCost = readOptionalNonNegativeNumber(input.uncachedInputCost);
+  const outputCost = readOptionalNonNegativeNumber(input.outputCost);
+  if (inputCost === undefined) inputCost = sumDefined(cachedInputCost, uncachedInputCost);
+  const totalCost = readOptionalNonNegativeNumber(input.totalCost) ?? sumDefined(inputCost, outputCost);
+  if (totalCost === undefined) return undefined;
+  const out: AgentUsageCostEstimate = { totalCost };
+  if (input.currency !== undefined) out.currency = input.currency;
+  if (inputCost !== undefined) out.inputCost = inputCost;
+  if (cachedInputCost !== undefined) out.cachedInputCost = cachedInputCost;
+  if (uncachedInputCost !== undefined) out.uncachedInputCost = uncachedInputCost;
+  if (outputCost !== undefined) out.outputCost = outputCost;
+  const unitTokens = readOptionalPositiveNumber(input.unitTokens);
+  if (unitTokens !== undefined) out.unitTokens = unitTokens;
+  return out;
+}
+
+function normalizeWasteFlags(input: readonly string[] | undefined): string[] | undefined {
+  if (input === undefined) return undefined;
+  const out: string[] = [];
+  for (let i = 0, length = input.length; i < length; i++) {
+    const flag = String(input[i]).trim();
+    if (flag.length > 0 && !out.includes(flag)) out[out.length] = flag;
+  }
+  return out.length === 0 ? undefined : out;
+}
+
+function costForTokens(tokens: number, costPerUnit: number, unitTokens: number): number {
+  return (tokens / unitTokens) * costPerUnit;
+}
+
+function sumDefined(...values: Array<number | undefined>): number | undefined {
+  let total = 0;
+  let seen = false;
+  for (let i = 0, length = values.length; i < length; i++) {
+    const value = values[i];
+    if (value === undefined) continue;
+    total += value;
+    seen = true;
+  }
+  return seen ? total : undefined;
 }
 
 function sanitizeRecord(record: LogRecord, controls: LoggerControls): LogRecord {
